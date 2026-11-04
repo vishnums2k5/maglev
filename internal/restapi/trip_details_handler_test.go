@@ -1,6 +1,7 @@
 package restapi
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -111,6 +112,51 @@ func TestTripDetailsHandlerEndToEnd(t *testing.T) {
 
 func TestTripDetailsHandlerWithInvalidTripID(t *testing.T) {
 	_, resp, model := serveAndRetrieveEndpoint(t, "/api/where/trip-details/agency_invalid.json?key=TEST")
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	assert.Equal(t, http.StatusNotFound, model.Code)
+	assert.Equal(t, "resource not found", model.Text)
+}
+
+func TestTripDetailsHandlerWithUnknownAgency(t *testing.T) {
+	api := createTestApi(t)
+	defer api.Shutdown()
+
+	trip := mustGetTrip(t, api)
+	tripID := utils.FormCombinedID("UNKNOWN", trip.ID)
+
+	resp, model := callAPIHandler[TripDetailsResponse](t, api,
+		"/api/where/trip-details/"+tripID+".json?key=TEST")
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	assert.Equal(t, http.StatusNotFound, model.Code)
+	assert.Equal(t, "resource not found", model.Text)
+}
+
+func TestTripDetailsHandlerWithMismatchedAgency(t *testing.T) {
+	api := createTestApi(t)
+	defer api.Shutdown()
+
+	trip := mustGetTrip(t, api)
+	agencies := mustGetAgencies(t, api)
+	var otherAgencyID string
+	route, err := api.GtfsManager.GtfsDB.Queries.GetRoute(context.Background(), trip.RouteID)
+	require.NoError(t, err)
+
+	for _, a := range agencies {
+		if a.ID != route.AgencyID {
+			otherAgencyID = a.ID
+			break
+		}
+	}
+	if otherAgencyID == "" {
+		otherAgencyID = "OTHER_AGENCY"
+	}
+
+	tripID := utils.FormCombinedID(otherAgencyID, trip.ID)
+
+	resp, model := callAPIHandler[TripDetailsResponse](t, api,
+		"/api/where/trip-details/"+tripID+".json?key=TEST")
 
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	assert.Equal(t, http.StatusNotFound, model.Code)
